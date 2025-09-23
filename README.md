@@ -146,7 +146,7 @@ Tests cover:
 - **Modern Styling**: GitHub-inspired dark theme
 
 ### AI Integration (OpenRouter)
-- **Model**: `microsoft/wizardlm-2-8x22b`
+- **Model**: `meta-llama/llama-3.3-8b-instruct:free`
 - **Prompt Engineering**: Optimized for command interpretation
 - **Error Handling**: Graceful fallbacks for API failures
 - **Security Validation**: AI output security checks
