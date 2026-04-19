@@ -1,0 +1,174 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>CodeTerminus — AI Terminal Agent</title>
+  <meta name="description" content="Intelligent AI-powered terminal agent with context awareness, multi-step planning, and persistent memory.">
+
+  <!-- xterm.js -->
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/xterm@5.3.0/css/xterm.min.css">
+  <script src="https://cdn.jsdelivr.net/npm/xterm@5.3.0/lib/xterm.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/xterm-addon-fit@0.8.0/lib/xterm-addon-fit.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/xterm-addon-web-links@0.9.0/lib/xterm-addon-web-links.min.js"></script>
+
+  <!-- Fuse.js fuzzy search -->
+  <script src="https://cdn.jsdelivr.net/npm/fuse.js@7.0.0/dist/fuse.min.js"></script>
+
+  <!-- Google Fonts -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:ital,wght@0,400;0,500;1,400&display=swap" rel="stylesheet">
+
+  <link rel="stylesheet" href="/static/css/main.css">
+</head>
+<body>
+
+  <!-- ── Command Palette ────────────────────────────────────────────────── -->
+  <div id="command-palette" class="palette-overlay hidden" role="dialog" aria-label="Command palette">
+    <div class="palette-container">
+      <div class="palette-header">
+        <span class="palette-icon">⌘</span>
+        <input type="text" id="palette-input" placeholder="Search history, sessions, or run a command…" autocomplete="off" spellcheck="false">
+        <kbd class="palette-esc">ESC</kbd>
+      </div>
+      <div id="palette-results" class="palette-results"></div>
+    </div>
+  </div>
+
+  <!-- ── Intent Confirmation Card ──────────────────────────────────────── -->
+  <div id="intent-card-overlay" class="intent-overlay hidden" role="dialog" aria-label="AI suggestion">
+    <div class="intent-card" id="intent-card"></div>
+  </div>
+
+  <!-- ── App Shell ──────────────────────────────────────────────────────── -->
+  <div class="app-shell">
+
+    <!-- Header -->
+    <header class="app-header" id="app-header">
+      <div class="header-left">
+        <div class="logo">
+          <span class="logo-icon">⬡</span>
+          <span class="logo-text">CodeTerminus</span>
+          <span class="logo-badge">AGENT</span>
+        </div>
+        <div class="header-cwd" id="header-cwd" title="Current working directory">~</div>
+      </div>
+
+      <div class="metrics-bar" id="metrics-bar">
+        <div class="metric-widget">
+          <div class="metric-label">CPU</div>
+          <div class="metric-value" id="cpu-val">—</div>
+          <div class="metric-bar-track"><div class="metric-bar-fill cpu-fill" id="cpu-bar" style="width:0%"></div></div>
+        </div>
+        <div class="metric-widget">
+          <div class="metric-label">RAM</div>
+          <div class="metric-value" id="ram-val">—</div>
+          <div class="metric-bar-track"><div class="metric-bar-fill ram-fill" id="ram-bar" style="width:0%"></div></div>
+        </div>
+        <div class="metric-widget">
+          <div class="metric-label">GPU</div>
+          <div class="metric-value" id="gpu-val">N/A</div>
+          <div class="metric-bar-track"><div class="metric-bar-fill gpu-fill" id="gpu-bar" style="width:0%"></div></div>
+        </div>
+        <div class="metric-widget">
+          <div class="metric-label">DISK</div>
+          <div class="metric-value" id="disk-val">—</div>
+          <div class="metric-bar-track"><div class="metric-bar-fill disk-fill" id="disk-bar" style="width:0%"></div></div>
+        </div>
+        <div class="metric-widget net-widget">
+          <div class="metric-label">NET ↑↓</div>
+          <div class="metric-value net-value">
+            <span id="net-up">—</span><span class="net-sep">/</span><span id="net-down">—</span>
+          </div>
+        </div>
+        <div class="metric-widget proc-widget">
+          <div class="metric-label">PROC</div>
+          <div class="metric-value" id="proc-val">—</div>
+        </div>
+      </div>
+
+      <div class="header-actions">
+        <button class="header-btn" id="palette-trigger" title="Command Palette (Ctrl+K)">⌘ Palette</button>
+        <button class="header-btn" id="record-btn" title="Record session">
+          <span class="rec-dot"></span> Record
+        </button>
+      </div>
+    </header>
+
+    <!-- Main -->
+    <main class="main-layout">
+
+      <!-- Terminal pane -->
+      <section class="terminal-pane" id="terminal-pane">
+        <div class="terminal-header">
+          <div class="terminal-tabs">
+            <div class="tab active"><span class="tab-dot"></span><span class="tab-name">terminal</span></div>
+          </div>
+          <div class="terminal-actions">
+            <button class="terminal-btn" id="clear-btn" title="Clear terminal">clear</button>
+            <button class="terminal-btn danger" id="interrupt-btn" title="Send Ctrl+C (kill)">⬛ kill</button>
+          </div>
+        </div>
+        <div id="terminal-container" class="terminal-container"></div>
+
+        <!-- Goal checklist (slides in at bottom) -->
+        <div id="goal-checklist" class="goal-panel"></div>
+      </section>
+
+      <!-- Context sidebar -->
+      <aside class="context-sidebar" id="context-sidebar">
+
+        <div class="sidebar-section" id="section-thoughts">
+          <div class="sidebar-section-header" onclick="window.sidebar.toggleSection('thought-log')">
+            <span class="section-icon">🧠</span>
+            <span class="section-title">AI Thoughts</span>
+            <button class="section-collapse">−</button>
+          </div>
+          <div id="thought-log" class="thought-log"></div>
+        </div>
+
+        <div class="sidebar-section" id="section-sessions">
+          <div class="sidebar-section-header" onclick="window.sidebar.toggleSection('sessions-list')">
+            <span class="section-icon">📼</span>
+            <span class="section-title">Sessions</span>
+            <button class="section-collapse">−</button>
+          </div>
+          <div class="record-row">
+            <input type="text" id="session-name-input" class="session-input" placeholder="Session name…">
+            <button class="btn-record" id="sidebar-record-btn" title="Start/stop recording">⏺</button>
+          </div>
+          <div id="sessions-list" class="sessions-list"></div>
+        </div>
+
+        <div class="sidebar-section" id="section-history">
+          <div class="sidebar-section-header" onclick="window.sidebar.toggleSection('history-list')">
+            <span class="section-icon">📜</span>
+            <span class="section-title">History</span>
+            <button class="section-collapse">−</button>
+          </div>
+          <div id="history-list" class="history-list"></div>
+        </div>
+
+        <div class="sidebar-section" id="section-dir">
+          <div class="sidebar-section-header" onclick="window.sidebar.toggleSection('dir-tree')">
+            <span class="section-icon">📁</span>
+            <span class="section-title">Directory</span>
+            <button class="section-collapse">−</button>
+          </div>
+          <div id="dir-tree" class="dir-tree"></div>
+        </div>
+
+      </aside>
+    </main>
+  </div>
+
+  <!-- Connection status -->
+  <div id="connection-status" class="conn-status disconnected">
+    <span class="conn-dot"></span>
+    <span class="conn-text" id="conn-text">Connecting…</span>
+  </div>
+
+  <!-- Entry point (ES module) -->
+  <script type="module" src="/static/js/app.js"></script>
+</body>
+</html>
